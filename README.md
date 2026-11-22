@@ -4,7 +4,9 @@ An interactive browser simulator of the one mechanism that lets a robot vacuum c
 
 A robot vacuum has no GPS, and its wheels slip. It never knows exactly where it is. Instead it keeps hundreds of guesses about its position, moves all of them the way its wheels say, and keeps the guesses from which the walls look the way its spinning laser sees them.
 
-**Live:** `https://<your-github-name>.github.io/<repo-name>/` (see *Deploy* below)
+**Live:** https://blinchikee0.github.io/robot-vacuum-guessing/
+
+**Code:** https://github.com/Blinchikee0/robot-vacuum-guessing
 
 ## The idea in two minutes
 
