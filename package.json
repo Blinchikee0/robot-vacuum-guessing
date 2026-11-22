@@ -1,0 +1,11 @@
+{
+  "name": "robot-vacuum-guessing",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A robot vacuum never knows exactly where it is. An interactive Monte Carlo localization simulator.",
+  "scripts": {
+    "start": "python -m http.server 5173",
+    "test": "node tests/sim.test.js"
+  }
+}

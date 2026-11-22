@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Your robot vacuum is guessing</title>
+<meta name="description" content="A robot vacuum never knows exactly where it is. Blind it, make the floor slippery, kidnap it, and watch hundreds of guesses find it again. A live Monte Carlo localization simulator.">
+<meta name="theme-color" content="#ECEBE7">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='7' fill='%23141414'/%3E%3Cpath d='M12 12L21 8.5A9.6 9.6 0 0 1 21 15.5Z' fill='%23FF4F00'/%3E%3Ccircle cx='12' cy='12' r='6.2' fill='%23F7F6F3'/%3E%3Ccircle cx='12' cy='12' r='2.3' fill='%23141414'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div class="app" id="app" data-page="sim">
+
+  <!-- the 3D view: full screen on large screens, a rounded window on phones -->
+  <section class="world" id="world" aria-label="3D view">
+    <canvas class="gl" id="glWorld" aria-hidden="true"></canvas>
+    <div class="wview" id="wview">
+      <div class="draghint sim-only" id="dragHint" data-i18n="drag_me"></div>
+      <div class="rb-labels robot-only" id="rbLabels"></div>
+      <div class="demo-chip glass robot-only" id="demoChip" hidden><i></i><span></span></div>
+    </div>
+
+    <div class="banner glass sim-only" id="mapBanner" hidden data-occlude>
+      <span data-i18n="map_stale"></span>
+      <button type="button" class="btn accent sm" id="mapUpdate" data-i18n="map_update"></button>
+    </div>
+    <div class="toast glass sim-only" id="toast" hidden></div>
+
+    <!-- simulation docks -->
+    <div class="dock dock-legend sim-only" data-occlude>
+      <ul class="legend">
+        <li class="glass"><svg class="g" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="#E9E8E4"/><path d="M12 3a9 9 0 0 1 0 18" fill="#2B2B2A"/><circle cx="11" cy="12" r="3" fill="#222"/></svg><span data-i18n="legend_true"></span></li>
+        <li class="glass"><svg class="g" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l7 2.5-7 2.5 2-2.5z M10 14l7 2.5-7 2.5 2-2.5z M13 4l7 2.5-7 2.5 2-2.5z" fill="#FF4F00"/></svg><span data-i18n="legend_guess"></span></li>
+        <li class="glass"><svg class="g" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="#FF4F00" opacity=".28"/><path d="M20 12l-6 3.4v-6.8z" fill="#FF4F00"/></svg><span data-i18n="legend_best"></span></li>
+        <li class="glass" id="legWheels" hidden><svg class="g" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="#141414" opacity=".16"/><path d="M20 12l-6 3.4v-6.8z" fill="#141414" opacity=".6"/></svg><span data-i18n="legend_wheels"></span></li>
+      </ul>
+    </div>
+    <div class="dock dock-ctl glass sim-only" data-occlude>
+      <div class="seg" id="viewSeg" role="group" aria-label="Camera">
+        <button type="button" data-view="model" data-i18n="view_model"></button>
+        <button type="button" data-view="plan" data-i18n="view_plan"></button>
+      </div>
+      <div class="seg" id="speedSeg" role="group" aria-label="Speed">
+        <button type="button" data-speed="1">1x</button>
+        <button type="button" data-speed="4">4x</button>
+        <button type="button" data-speed="8">8x</button>
+      </div>
+    </div>
+    <div class="dock dock-readouts sim-only" data-occlude>
+      <div class="ro glass" id="roOffBox">
+        <span class="ro-l" data-i18n="ro_off"></span>
+        <span class="ro-v"><b id="roOff">0</b><i data-i18n="cm"></i></span>
+        <span class="ro-s" data-i18n="ro_off_s"></span>
+      </div>
+      <div class="ro glass">
+        <span class="ro-l" data-i18n="ro_unsure"></span>
+        <span class="ro-v"><b id="roUnsure">0</b><i data-i18n="cm"></i></span>
+        <span class="ro-s" data-i18n="ro_unsure_s"></span>
+      </div>
+      <div class="ro glass">
+        <span class="ro-l" data-i18n="ro_clean"></span>
+        <span class="ro-v"><b id="roClean">0</b><i>%</i></span>
+        <span class="ro-bar"><i id="roCleanBar"></i></span>
+      </div>
+      <div class="ro-tag" id="roLaser">
+        <span class="tag-ico" aria-hidden="true"><i class="tag-beam"></i><i class="tag-disc"></i></span>
+        <span id="roLaserText"></span>
+      </div>
+    </div>
+
+    <!-- robot page docks -->
+    <div class="dock dock-modes glass robot-only" data-occlude>
+      <div class="seg" id="modeSeg" role="group" aria-label="View">
+        <button type="button" data-mode="whole" data-i18n="mode_whole"></button>
+        <button type="button" data-mode="open" data-i18n="mode_open"></button>
+        <button type="button" data-mode="cut" data-i18n="mode_cut"></button>
+        <button type="button" data-mode="apart" data-i18n="mode_apart"></button>
+      </div>
+      <button type="button" class="btn accent" id="tourBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10-6.5z"/></svg>
+        <span data-i18n="tour_btn"></span>
+      </button>
+    </div>
+    <div class="dock dock-view robot-only" data-occlude>
+      <p class="hint-chip glass" data-i18n="rb_hint"></p>
+      <button type="button" class="btn glass-btn" id="rbReset">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg>
+        <span data-i18n="rb_reset_view"></span>
+      </button>
+    </div>
+    <div class="tour glass robot-only" id="tour" hidden data-occlude="left">
+      <div class="tour-top">
+        <span class="tour-step" id="tourStep"></span>
+        <button type="button" class="tour-x" id="tourExit" aria-label="Close tour">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="tour-body" id="tourBody">
+        <h3 id="tourTitle"></h3>
+        <p id="tourText"></p>
+      </div>
+      <div class="tour-bar"><i id="tourBar"></i></div>
+      <div class="tour-nav">
+        <button type="button" class="btn glass-btn" id="tourBack" data-i18n="tour_back"></button>
+        <button type="button" class="btn ink" id="tourNext"></button>
+      </div>
+    </div>
+  </section>
+
+  <header class="top glass" data-occlude>
+    <p class="badge">
+      <span class="logo" aria-hidden="true"><i class="logo-beam"></i><i class="logo-disc"></i></span>
+      <span data-i18n="badge"></span>
+    </p>
+    <h1 data-i18n="title"></h1>
+    <p class="lede" data-i18n="lede"></p>
+  </header>
+
+  <nav class="pages glass" id="pageSeg" aria-label="Pages" data-occlude>
+    <button type="button" data-page="sim">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 12l6-3"/></svg>
+      <span data-i18n="page_sim"></span>
+    </button>
+    <button type="button" data-page="robot">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 4.5-9 4.5-9-4.5z"/><path d="M3 12l9 4.5 9-4.5"/><path d="M3 16.5l9 4.5 9-4.5"/></svg>
+      <span data-i18n="page_robot"></span>
+    </button>
+  </nav>
+
+  <aside class="panel glass" data-occlude>
+    <!-- SIMULATION -->
+    <div class="closeup sim-only" id="closeup">
+      <canvas class="gl" id="glClose" aria-hidden="true"></canvas>
+      <div class="cu-cap">
+        <span class="cu-title glass" data-i18n="closeup_cap"></span>
+        <span class="cu-status glass" id="cuStatus"></span>
+      </div>
+      <div class="cu-part glass-dark" id="cuPart" hidden><b></b><span></span></div>
+      <div class="cu-foot">
+        <p class="cu-hint glass" data-i18n="closeup_hint"></p>
+        <button type="button" class="btn ink" id="lookInside">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 4.5-9 4.5-9-4.5z"/><path d="M3 12l9 4.5 9-4.5"/><path d="M3 16.5l9 4.5 9-4.5"/></svg>
+          <span data-i18n="look_inside"></span>
+        </button>
+      </div>
+    </div>
+
+    <nav class="seg tabs sim-only" role="tablist">
+      <button type="button" role="tab" data-tab="try" data-i18n="tab_try"></button>
+      <button type="button" role="tab" data-tab="inside" data-i18n="tab_inside"></button>
+      <button type="button" role="tab" data-tab="why" data-i18n="tab_why"></button>
+    </nav>
+
+    <div class="tabbody sim-only">
+      <section class="tab" id="tab-try" role="tabpanel">
+        <h2 class="h2" data-i18n="try_head"></h2>
+        <ol class="tasks">
+          <li class="task" id="task1">
+            <span class="tn">1</span>
+            <div class="tb">
+              <h3 data-i18n="t1_title"></h3>
+              <p data-i18n="t1_text"></p>
+              <div class="ctl">
+                <span class="ctl-l" data-i18n="laser"></span>
+                <div class="seg" id="laserSeg" role="group">
+                  <button type="button" data-laser="on" data-i18n="on"></button>
+                  <button type="button" data-laser="off" data-i18n="off"></button>
+                </div>
+              </div>
+            </div>
+            <span class="tchip"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="tchip-t"></span></span>
+            <span class="tprog"><i></i></span>
+          </li>
+          <li class="task" id="task2">
+            <span class="tn">2</span>
+            <div class="tb">
+              <h3 data-i18n="t2_title"></h3>
+              <p data-i18n="t2_text"></p>
+              <label class="slider">
+                <span class="sl-top"><span data-i18n="slip"></span><b id="slipVal"></b></span>
+                <input type="range" id="slip" min="0" max="30" step="1" value="6">
+                <span class="sl-ends"><span data-i18n="slip_lo"></span><span data-i18n="slip_hi"></span></span>
+              </label>
+            </div>
+            <span class="tchip"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="tchip-t"></span></span>
+            <span class="tprog"><i></i></span>
+          </li>
+          <li class="task" id="task3">
+            <span class="tn">3</span>
+            <div class="tb">
+              <h3 data-i18n="t3_title"></h3>
+              <p data-i18n="t3_text"></p>
+              <div class="ctl">
+                <button type="button" class="btn ink" id="kidnap">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7"/><path d="M9 7h8v8"/></svg>
+                  <span data-i18n="t3_btn"></span>
+                </button>
+                <span class="ctl-note" data-i18n="t3_or_drag"></span>
+              </div>
+              <p class="tres" id="t3res" aria-live="polite"></p>
+            </div>
+            <span class="tchip"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span class="tchip-t"></span></span>
+            <span class="tprog"><i></i></span>
+          </li>
+        </ol>
+
+        <div class="insight" id="insight" hidden>
+          <h3 data-i18n="insight_head"></h3>
+          <p data-i18n="insight_text"></p>
+        </div>
+
+        <div class="block">
+          <label class="slider">
+            <span class="sl-top"><span data-i18n="guesses"></span><b id="nVal"></b></span>
+            <input type="range" id="nParticles" min="0" max="100" step="1" value="71">
+          </label>
+          <p class="hint" data-i18n="guesses_hint"></p>
+        </div>
+
+        <div class="block">
+          <div class="chart-head"><span data-i18n="chart_title"></span><span class="chart-key"><i></i><span data-i18n="chart_blind"></span></span></div>
+          <canvas id="errChart" height="100"></canvas>
+          <p class="odo" id="odoLine"></p>
+        </div>
+
+        <button type="button" class="btn glass-btn wide" id="reset">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg>
+          <span data-i18n="reset"></span>
+        </button>
+      </section>
+
+      <section class="tab" id="tab-inside" role="tabpanel" hidden>
+        <h2 class="h2" data-i18n="in_head"></h2>
+        <p class="sub" data-i18n="in_sub"></p>
+        <div class="phases" id="phases">
+          <div class="ph" data-ph="0"><span class="ph-n">1</span><span class="ph-t" data-i18n="ph1_t"></span></div>
+          <div class="ph" data-ph="1"><span class="ph-n">2</span><span class="ph-t" data-i18n="ph2_t"></span></div>
+          <div class="ph" data-ph="2"><span class="ph-n">3</span><span class="ph-t" data-i18n="ph3_t"></span></div>
+          <div class="ph" data-ph="3"><span class="ph-n">4</span><span class="ph-t" data-i18n="ph4_t"></span></div>
+        </div>
+        <p class="ph-desc" id="phDesc"></p>
+        <div class="btnrow">
+          <button type="button" class="btn ink" id="btnRun" data-i18n="run"></button>
+          <button type="button" class="btn glass-btn" id="btnPause" data-i18n="pause"></button>
+          <button type="button" class="btn accent" id="btnStep" data-i18n="step"></button>
+        </div>
+        <div class="stats">
+          <div><span data-i18n="neff"></span><b id="stNeff">0</b></div>
+          <div><span data-i18n="injected"></span><b id="stInj">0</b></div>
+        </div>
+        <div class="block">
+          <h3 class="h3" data-i18n="inspect_head"></h3>
+          <p class="inspect" id="inspectText"></p>
+        </div>
+        <div class="block">
+          <label class="slider">
+            <span class="sl-top"><span data-i18n="noise"></span><b id="noiseVal"></b></span>
+            <input type="range" id="noise" min="5" max="150" step="5" value="20">
+          </label>
+          <label class="slider">
+            <span class="sl-top"><span data-i18n="beams"></span><b id="beamsVal"></b></span>
+            <input type="range" id="beams" min="6" max="90" step="2" value="36">
+          </label>
+          <label class="slider">
+            <span class="sl-top"><span data-i18n="distrust"></span><b id="distrustVal"></b></span>
+            <input type="range" id="distrust" min="2" max="40" step="1" value="10">
+          </label>
+          <p class="hint" data-i18n="distrust_hint"></p>
+        </div>
+        <div class="block toggles">
+          <button type="button" class="tog" data-show="rays" aria-pressed="true"><span data-i18n="show_rays"></span><i></i></button>
+          <button type="button" class="tog" data-show="ghost" aria-pressed="false"><span data-i18n="show_ghost"></span><i></i></button>
+          <button type="button" class="tog" data-show="field" aria-pressed="false"><span data-i18n="show_field"></span><i></i></button>
+          <button type="button" class="tog" data-show="plan" aria-pressed="false"><span data-i18n="show_plan"></span><i></i></button>
+          <button type="button" class="tog" data-show="gyro" aria-pressed="true"><span data-i18n="gyro"></span><i></i></button>
+        </div>
+        <p class="hint" data-i18n="furn_note"></p>
+      </section>
+
+      <section class="tab" id="tab-why" role="tabpanel" hidden>
+        <div class="card"><h3 data-i18n="why_h1"></h3><p data-i18n="why_p1"></p></div>
+        <div class="card"><h3 data-i18n="why_h2"></h3><p data-i18n="why_p2"></p></div>
+        <div class="card"><h3 data-i18n="why_h3"></h3><p data-i18n="why_p3"></p></div>
+        <div class="card dark"><h3 data-i18n="why_h4"></h3><p data-i18n="why_p4"></p></div>
+      </section>
+    </div>
+
+    <!-- ROBOT UP CLOSE -->
+    <div class="rb-panel robot-only">
+      <div class="rb-intro">
+        <h2 class="h2" data-i18n="rb_head"></h2>
+        <p class="sub" data-i18n="rb_sub"></p>
+      </div>
+      <article class="rb-card" id="rbCard">
+        <div class="rb-card-top">
+          <span class="rb-num" id="rbNum"></span>
+          <span class="rb-tag" id="rbTag" data-i18n="rb_nav"></span>
+        </div>
+        <h3 id="rbName"></h3>
+        <p class="rb-desc" id="rbDesc"></p>
+        <p class="rb-more" id="rbMore"></p>
+        <ul class="rb-specs" id="rbSpecs"></ul>
+        <p class="rb-sim" id="rbSim"></p>
+      </article>
+      <ol class="rb-list" id="rbList"></ol>
+      <button type="button" class="btn ink wide" id="rbBack">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 12l6-3"/></svg>
+        <span data-i18n="rb_back"></span>
+      </button>
+    </div>
+  </aside>
+</div>
+
+<noscript><p class="noscript">This simulator needs JavaScript and WebGL.</p></noscript>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

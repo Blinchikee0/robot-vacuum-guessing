@@ -1,0 +1,10 @@
+# local tool settings
+.claude/
+
+# documents that are not part of the project
+*.docx
+
+# system and package files
+node_modules/
+.DS_Store
+Thumbs.db
